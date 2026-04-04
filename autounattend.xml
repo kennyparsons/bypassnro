@@ -105,6 +105,10 @@
 					<Order>1</Order>
 					<CommandLine>powershell.exe -WindowStyle Normal -NoProfile -Command "Get-Content -LiteralPath 'C:\Windows\Setup\Scripts\FirstLogon.ps1' -Raw | Invoke-Expression;"</CommandLine>
 				</SynchronousCommand>
+				<SynchronousCommand wcm:action="add">
+					<Order>2</Order>
+					<CommandLine>powershell.exe -WindowStyle Normal -NoProfile -ExecutionPolicy Bypass -File "C:\Windows\Setup\Scripts\JoinDomain.ps1"</CommandLine>
+				</SynchronousCommand>
 			</FirstLogonCommands>
 		</component>
 	</settings>
@@ -142,7 +146,7 @@ do {
 # Always ensure prefix is present
 $finalName = "am-$name"
 
-return $finalName
+$finalName
 		</File>
 		<File path="C:\Windows\Setup\Scripts\SetComputerName.ps1">
 $ErrorActionPreference = 'Stop';
@@ -589,6 +593,123 @@ $scripts = @(
     $complete += $increment;
   }
 } *&gt;&amp;1 | Out-String -Stream &gt;&gt; "C:\Windows\Setup\Scripts\DefaultUser.log";
+		</File>
+		<File path="C:\Windows\Setup\Scripts\JoinDomain.ps1">
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+
+$form = New-Object System.Windows.Forms.Form
+$form.Text = 'Join Domain'
+$form.Size = New-Object System.Drawing.Size(420, 320)
+$form.StartPosition = 'CenterScreen'
+$form.FormBorderStyle = 'FixedDialog'
+$form.MaximizeBox = $false
+
+$y = 20
+
+$lblDomain = New-Object System.Windows.Forms.Label
+$lblDomain.Location = New-Object System.Drawing.Point(20, $y)
+$lblDomain.Size = New-Object System.Drawing.Size(120, 20)
+$lblDomain.Text = 'Domain FQDN:'
+$form.Controls.Add($lblDomain)
+
+$txtDomain = New-Object System.Windows.Forms.TextBox
+$txtDomain.Location = New-Object System.Drawing.Point(150, $y)
+$txtDomain.Size = New-Object System.Drawing.Size(230, 20)
+$form.Controls.Add($txtDomain)
+
+$y += 40
+
+$lblNetBIOS = New-Object System.Windows.Forms.Label
+$lblNetBIOS.Location = New-Object System.Drawing.Point(20, $y)
+$lblNetBIOS.Size = New-Object System.Drawing.Size(120, 20)
+$lblNetBIOS.Text = 'NetBIOS Name:'
+$form.Controls.Add($lblNetBIOS)
+
+$txtNetBIOS = New-Object System.Windows.Forms.TextBox
+$txtNetBIOS.Location = New-Object System.Drawing.Point(150, $y)
+$txtNetBIOS.Size = New-Object System.Drawing.Size(230, 20)
+$form.Controls.Add($txtNetBIOS)
+
+$y += 40
+
+$lblUser = New-Object System.Windows.Forms.Label
+$lblUser.Location = New-Object System.Drawing.Point(20, $y)
+$lblUser.Size = New-Object System.Drawing.Size(120, 20)
+$lblUser.Text = 'Username:'
+$form.Controls.Add($lblUser)
+
+$txtUser = New-Object System.Windows.Forms.TextBox
+$txtUser.Location = New-Object System.Drawing.Point(150, $y)
+$txtUser.Size = New-Object System.Drawing.Size(230, 20)
+$form.Controls.Add($txtUser)
+
+$y += 40
+
+$lblPass = New-Object System.Windows.Forms.Label
+$lblPass.Location = New-Object System.Drawing.Point(20, $y)
+$lblPass.Size = New-Object System.Drawing.Size(120, 20)
+$lblPass.Text = 'Password:'
+$form.Controls.Add($lblPass)
+
+$txtPass = New-Object System.Windows.Forms.TextBox
+$txtPass.Location = New-Object System.Drawing.Point(150, $y)
+$txtPass.Size = New-Object System.Drawing.Size(230, 20)
+$txtPass.UseSystemPasswordChar = $true
+$form.Controls.Add($txtPass)
+
+$y += 50
+
+$btnJoin = New-Object System.Windows.Forms.Button
+$btnJoin.Location = New-Object System.Drawing.Point(150, $y)
+$btnJoin.Size = New-Object System.Drawing.Size(100, 30)
+$btnJoin.Text = 'Join Domain'
+$form.Controls.Add($btnJoin)
+
+$btnSkip = New-Object System.Windows.Forms.Button
+$btnSkip.Location = New-Object System.Drawing.Point(260, $y)
+$btnSkip.Size = New-Object System.Drawing.Size(100, 30)
+$btnSkip.Text = 'Skip'
+$form.Controls.Add($btnSkip)
+
+$btnJoin.Add_Click({
+    if (-not $txtDomain.Text -or -not $txtUser.Text -or -not $txtPass.Text) {
+        [System.Windows.Forms.MessageBox]::Show('Domain, Username, and Password are required.', 'Validation Error', 'OK', 'Warning')
+        return
+    }
+    $form.Tag = 'Join'
+    $form.Close()
+})
+
+$btnSkip.Add_Click({
+    $form.Tag = 'Skip'
+    $form.Close()
+})
+
+$form.AcceptButton = $btnJoin
+$form.ShowDialog() | Out-Null
+
+if ($form.Tag -eq 'Join') {
+    $domain = $txtDomain.Text.Trim()
+    $netbios = $txtNetBIOS.Text.Trim()
+    $username = $txtUser.Text.Trim()
+    $secPass = ConvertTo-SecureString $txtPass.Text -AsPlainText -Force
+
+    # Build credential with NetBIOS prefix if provided, otherwise use domain
+    if ($netbios) {
+        $credential = New-Object System.Management.Automation.PSCredential("$netbios\$username", $secPass)
+    } else {
+        $credential = New-Object System.Management.Automation.PSCredential("$domain\$username", $secPass)
+    }
+
+    try {
+        Add-Computer -DomainName $domain -Credential $credential -Force -ErrorAction Stop
+        [System.Windows.Forms.MessageBox]::Show("Successfully joined domain '$domain'. The computer will now restart.", 'Domain Join', 'OK', 'Information')
+        Restart-Computer -Force
+    } catch {
+        [System.Windows.Forms.MessageBox]::Show("Failed to join domain: $_", 'Domain Join Error', 'OK', 'Error')
+    }
+}
 		</File>
 		<File path="C:\Windows\Setup\Scripts\FirstLogon.ps1">
 $scripts = @(
